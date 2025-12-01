@@ -23,6 +23,7 @@ def check_db():
         return f"<h2>MySQL Connection Failed!</h2><p>Error: {e}</p>"
     
 
+
 @app.route("/")
 def home():
     return "<h1>Hello, Flask</h1>"
@@ -54,6 +55,7 @@ def get_customers():
         return jsonify({'error': 'An internal error occured'}), 500
     
 
+
 @app.route("/customers/<int:CustomerID>", methods=['GET'])
 def get_customer(CustomerID):
     cur = None
@@ -78,6 +80,7 @@ def get_customer(CustomerID):
     finally:
         if cur:
             cur.close()
+
 
 
 @app.route("/customers", methods=['POST'])
@@ -120,6 +123,7 @@ def create_customer():
     finally:
         if cur:
             cur.close()
+
 
 
 @app.route("/customers/<int:CustomerID>", methods=['PUT'])
@@ -176,6 +180,33 @@ def update_customer(CustomerID):
     finally:
         if cur:
             cur.close()
+
+
+
+@app.route("/customers/<int:CustomerID>", methods=['DELETE'])
+def delete_customer(CustomerID):
+    cur = None
+    try:
+        cur = mysql.connection.cursor()
+        query = "DELETE FROM mydb.customers WHERE CustomerID = %s"
+        
+        cur.execute(query, (CustomerID,))
+        if cur.rowcount == 0:
+            return jsonify({'message': f'Customer with ID {CustomerID} not found'}), 404
+
+        mysql.connection.commit()
+        
+        return jsonify({
+            'message': f'Customer ID {CustomerID} deleted successfully!'
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        if cur:
+            cur.close()
+
 
 
 if __name__ == '__main__':
