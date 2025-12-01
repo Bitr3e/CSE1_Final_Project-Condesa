@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_mysqldb import MySQL
 
 app = Flask(__name__)
@@ -77,6 +77,45 @@ def get_customer(CustomerID):
     finally:
         if cur:
             cur.close()
+
+
+@app.route("/customers", methods=['POST'])
+def create_customer():
+    cur = None
+    try:
+        data = request.json
+
+        if not data or 'FirstName' not in data or 'LastName' not in data or 'Email' not in data or 'CreatedAt' not in data:
+            return jsonify({'error': 'Missing required fields: Firstname, Lastname, Email'}), 400
+        
+        customer_lastname = data['LastName']
+        customer_firstname = data['FirsttName']
+        customer_email = data['Email']
+        Creation_date = data['CreatedAt']
+
+        cur = mysql.connection.cursor()
+        query = "INSERT INTO mydb.customers (FirstName, LastName, Email, CreatedAt) VALUES (%s, %s, %s, %s)"
+
+        cur.execute(query, (customer_lastname, customer_firstname, customer_email, Creation_date))
+        mysql.connection.commit()
+
+        new_customer_id = cur.lastrowid
+
+        return jsonify({
+            'message': 'Customer record created successfully!',
+            'CustomerID': new_customer_id,
+            'First name': customer_firstname,
+            'Last name': customer_lastname,
+            'Email': customer_email,
+            'Created at': Creation_date
+        }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        if cur:
+            cur.close()
+
 
 if __name__ == '__main__':
     app.run(debug=True)
