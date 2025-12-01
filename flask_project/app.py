@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_mysqldb import MySQL
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -82,21 +83,25 @@ def get_customer(CustomerID):
 @app.route("/customers", methods=['POST'])
 def create_customer():
     cur = None
+
+    if request.content_type != 'application/json':
+        return jsonify({'error': 'Unsupported Media Type. Must be application/json.'}), 415
+
     try:
         data = request.json
 
-        if not data or 'FirstName' not in data or 'LastName' not in data or 'Email' not in data or 'CreatedAt' not in data:
+        if not data or 'FirstName' not in data or 'LastName' not in data or 'Email' not in data:
             return jsonify({'error': 'Missing required fields: Firstname, Lastname, Email'}), 400
         
         customer_lastname = data['LastName']
-        customer_firstname = data['FirsttName']
+        customer_firstname = data['FirstName']
         customer_email = data['Email']
-        Creation_date = data['CreatedAt']
+        current_time = datetime.now()
 
         cur = mysql.connection.cursor()
         query = "INSERT INTO mydb.customers (FirstName, LastName, Email, CreatedAt) VALUES (%s, %s, %s, %s)"
 
-        cur.execute(query, (customer_lastname, customer_firstname, customer_email, Creation_date))
+        cur.execute(query, (customer_lastname, customer_firstname, customer_email, current_time))
         mysql.connection.commit()
 
         new_customer_id = cur.lastrowid
@@ -107,8 +112,64 @@ def create_customer():
             'First name': customer_firstname,
             'Last name': customer_lastname,
             'Email': customer_email,
-            'Created at': Creation_date
+            'CreatedAt': current_time 
         }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    finally:
+        if cur:
+            cur.close()
+
+
+@app.route("/customers/<int:CustomerID>", methods=['PUT'])
+def update_customer(CustomerID):
+    cur = None
+    try:
+        data = request.json
+
+        if not data:
+            return jsonify({'error': 'No data provided for update'}), 400
+        
+        customer_lastname = data.get('LastName')
+        customer_firstname = data.get('FirstName')
+        customer_email = data.get('Email')
+
+        updates = []
+        values = []
+
+        if customer_firstname:
+            updates.append("FirstName = %s")
+            values.append(customer_firstname)
+
+        if customer_lastname:
+            updates.append("LastName = %s")
+            values.append(customer_lastname)
+        
+        if customer_email:
+            updates.append("Email = %s")
+            values.append(customer_email)
+        
+        if not updates:
+            return jsonify({'m6essage': 'Missing valid fields for update'}), 400
+        
+        update_clause = ", ".join(updates)
+        query = f"UPDATE mydb.customers SET {update_clause} WHERE CustomerID = %s"
+        values.append(CustomerID)
+
+        cur = mysql.connection.cursor()
+        cur.execute(query, tuple(values))
+
+        if cur.rowcount == 0:
+            return jsonify({'message': f'Customer with ID {CustomerID} not found'}), 404
+        
+        mysql.connection.commit()
+
+        return jsonify({
+            'message': f'Customer ID {CustomerID} updated successfully!',
+            'fields_updated': updates
+        }), 200
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
