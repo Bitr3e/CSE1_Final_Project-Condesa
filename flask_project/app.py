@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_mysqldb import MySQL
-from datetime import datetime
+from datetime import datetime, timedelta
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, JWTManager
 
 app = Flask(__name__)
 
@@ -8,29 +9,47 @@ app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'root'
 app.config['MYSQL_DB'] = 'mydb'
-
 mysql = MySQL(app)
 
-def check_db():
-    try:
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT * FROM mydb.customers")
-        cur.close()
-
-        return "<h2>MySQL Connection Successful!</h2>"
-
-    except Exception as e:
-        return f"<h2>MySQL Connection Failed!</h2><p>Error: {e}</p>"
-    
+app.config['JWT_SECRET_KEY'] = 'super-secret-key-do-not-share'
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=30)
+jwt = JWTManager(app)
 
 
 @app.route("/")
 def home():
-    return "<h1>Hello, Flask</h1>"
+    return "<h1>Hello, Flask</h1> <br> <a href='/login'>Log-in</a>"
 
+USERS = {
+    "admin": "admin123",
+    "user1": "securepass"
+}
+
+def authenticate(username, password):
+    if username in USERS and USERS[username] == password:
+        return True
+    return False
+
+@app.route("/login", methods=["POST"])
+def login():
+    """Route to issue a JWT token upon successful authentication."""
+    data = request.json
+    username = data.get("username", None)
+    password = data.get("password", None)
+
+    if not authenticate(username, password):
+        return jsonify({"msg": "Bad username or password"}), 401
+    
+    access_token = create_access_token(identity=username)
+    
+    return jsonify(access_token=access_token)
 
 @app.route('/customers', methods=['GET'])
+@jwt_required()
 def get_customers():
+    current_user = get_jwt_identity()
+    print(f"User accessing customer list: {current_user}")
+
     try: 
         cur = mysql.connection.cursor()
         result = cur.execute("SELECT * FROM mydb.customers")
@@ -57,6 +76,7 @@ def get_customers():
 
 
 @app.route("/customers/<int:CustomerID>", methods=['GET'])
+@jwt_required()
 def get_customer(CustomerID):
     cur = None
     try:
@@ -84,6 +104,7 @@ def get_customer(CustomerID):
 
 
 @app.route("/customers", methods=['POST'])
+@jwt_required()
 def create_customer():
     cur = None
 
@@ -127,6 +148,7 @@ def create_customer():
 
 
 @app.route("/customers/<int:CustomerID>", methods=['PUT'])
+@jwt_required()
 def update_customer(CustomerID):
     cur = None
     try:
@@ -184,6 +206,7 @@ def update_customer(CustomerID):
 
 
 @app.route("/customers/<int:CustomerID>", methods=['DELETE'])
+@jwt_required()
 def delete_customer(CustomerID):
     cur = None
     try:
