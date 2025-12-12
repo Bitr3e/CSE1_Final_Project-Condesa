@@ -12,13 +12,30 @@ app.config['MYSQL_DB'] = 'mydb'
 mysql = MySQL(app)
 
 app.config['JWT_SECRET_KEY'] = 'super-secret-key-do-not-share'
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=30)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(minutes=50)
 jwt = JWTManager(app)
 
 
 @app.route("/")
 def home():
-    return "<h1>Hello, Flask</h1> <br> <a href='/login'>Log-in</a>"
+    return jsonify({
+        "message": "CRUD API for customer",
+        "version": "1.0",
+        "endpoints": {
+            "POST /127.0.0.1:5000/login": "Login and get JWT token",
+            "GET /127.0.0.1:5000/customers": "Get all customers",
+            "GET /127.0.0.1:5000/customers?customer_name=<name>": "Search customers by name",
+            "GET /127.0.0.1:5000/customers/<id>": "Get customer by ID",
+            "POST /127.0.0.1:5000/customers": "Create new customer",
+            "PUT /127.0.0.1:5000/customers/<id>": "Update customer by ID",
+            "DELETE /127.0.0.1:5000/customers/<id>": "Delete customer"
+        },
+        "authentication": {
+            "username": "admin",
+            "password": "admin123",
+            "token_format": "Authorization: Bearer <token>",
+        }
+    })
 
 USERS = {
     "admin": "admin123",
@@ -47,12 +64,34 @@ def login():
 @app.route('/customers', methods=['GET'])
 @jwt_required()
 def get_customers():
+    """
+    Get all customers or search customers by name.
+    Usage: GET /customers or GET /customers?customer_name=John
+    """
     current_user = get_jwt_identity()
     print(f"User accessing customer list: {current_user}")
 
+    # --- Search Implementation Start ---
+    search_name = request.args.get('customer_name')
+    
+    base_query = "SELECT * FROM mydb.customers"
+    query_params = []
+    
+    if search_name:
+        # Use LIKE for partial matching (case-insensitive depending on MySQL collation)
+        # Search against both FirstName and LastName
+        base_query += " WHERE FirstName LIKE %s OR LastName LIKE %s"
+        search_pattern = f"%{search_name}%"
+        query_params.extend([search_pattern, search_pattern])
+
     try: 
         cur = mysql.connection.cursor()
-        result = cur.execute("SELECT * FROM mydb.customers")
+        
+        # Execute the dynamic query
+        if query_params:
+            result = cur.execute(base_query, tuple(query_params))
+        else:
+            result = cur.execute(base_query)
 
         if result > 0:
             customer_details = cur.fetchall()
@@ -62,17 +101,20 @@ def get_customers():
             for row in customer_details:
                 customer_list.append(dict(zip(column_names, row)))
 
-            cur.close()
-
             return jsonify(customer_list)
         else:
-            cur.close()
-            return jsonify({'message': 'No customers found'}), 404
-        
-    except Exception as  e:
+            if search_name:
+                 return jsonify({'message': f'No customers found matching name: {search_name}'}), 404
+            else:
+                 return jsonify({'message': 'No customers found'}), 404
+            
+    except Exception as e:
         print(f"Database Error: {e}")
         return jsonify({'error': 'An internal error occured'}), 500
     
+    finally:
+        if 'cur' in locals() and cur:
+            cur.close()
 
 
 @app.route("/customers/<int:CustomerID>", methods=['GET'])
@@ -102,7 +144,6 @@ def get_customer(CustomerID):
             cur.close()
 
 
-
 @app.route("/customers", methods=['POST'])
 @jwt_required()
 def create_customer():
@@ -117,15 +158,16 @@ def create_customer():
         if not data or 'FirstName' not in data or 'LastName' not in data or 'Email' not in data:
             return jsonify({'error': 'Missing required fields: Firstname, Lastname, Email'}), 400
         
+        customer_firstname = data['FirstName'] 
         customer_lastname = data['LastName']
-        customer_firstname = data['FirstName']
         customer_email = data['Email']
         current_time = datetime.now()
 
         cur = mysql.connection.cursor()
         query = "INSERT INTO mydb.customers (FirstName, LastName, Email, CreatedAt) VALUES (%s, %s, %s, %s)"
 
-        cur.execute(query, (customer_lastname, customer_firstname, customer_email, current_time))
+        # Assuming the database columns are (FirstName, LastName, Email, CreatedAt)
+        cur.execute(query, (customer_firstname, customer_lastname, customer_email, current_time))
         mysql.connection.commit()
 
         new_customer_id = cur.lastrowid
@@ -136,7 +178,7 @@ def create_customer():
             'First name': customer_firstname,
             'Last name': customer_lastname,
             'Email': customer_email,
-            'CreatedAt': current_time 
+            'CreatedAt': current_time.strftime('%Y-%m-%d %H:%M:%S')
         }), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -144,7 +186,6 @@ def create_customer():
     finally:
         if cur:
             cur.close()
-
 
 
 @app.route("/customers/<int:CustomerID>", methods=['PUT'])
@@ -164,20 +205,20 @@ def update_customer(CustomerID):
         updates = []
         values = []
 
-        if customer_firstname:
+        if customer_firstname is not None:
             updates.append("FirstName = %s")
             values.append(customer_firstname)
 
-        if customer_lastname:
+        if customer_lastname is not None:
             updates.append("LastName = %s")
             values.append(customer_lastname)
         
-        if customer_email:
+        if customer_email is not None:
             updates.append("Email = %s")
             values.append(customer_email)
         
         if not updates:
-            return jsonify({'m6essage': 'Missing valid fields for update'}), 400
+            return jsonify({'message': 'Missing valid fields for update'}), 400
         
         update_clause = ", ".join(updates)
         query = f"UPDATE mydb.customers SET {update_clause} WHERE CustomerID = %s"
@@ -204,7 +245,6 @@ def update_customer(CustomerID):
             cur.close()
 
 
-
 @app.route("/customers/<int:CustomerID>", methods=['DELETE'])
 @jwt_required()
 def delete_customer(CustomerID):
@@ -229,7 +269,6 @@ def delete_customer(CustomerID):
     finally:
         if cur:
             cur.close()
-
 
 
 if __name__ == '__main__':
